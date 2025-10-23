@@ -5,7 +5,8 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Query
+from pydantic import BaseModel, ValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
@@ -88,42 +89,79 @@ def get_activities():
     return activities
 
 
+class SignupRequest(BaseModel):
+    email: str
+
+
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
+def signup_for_activity(
+    activity_name: str,
+    email: str | None = Query(None, description="Student email as query parameter"),
+    payload: dict | None = Body(None),
+):
+    """Sign up a student for an activity.
+
+    Accepts email either as a query parameter (?email=) or as a JSON body
+    {"email": "..."}. Uses EmailStr for validation.
+    """
+    # Resolve email from either query param or JSON body
+    if not email and payload is not None:
+        # allow payload to be a dict (client may send empty JSON {})
+        try:
+            # payload may already be a dict; parse and validate
+            parsed = SignupRequest.parse_obj(payload)
+            email = parsed.email
+        except ValidationError:
+            # Keep behavior: if body missing email, return 400
+            raise HTTPException(status_code=400, detail="Missing email to sign up")
+
+    if not email:
+        raise HTTPException(status_code=400, detail="Missing email to sign up")
+
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
 
     # Get the specific activity
     activity = activities[activity_name]
-    # Add above the "Add student" comment:
+
     if email in activity["participants"]:
-      raise HTTPException(status_code=400, detail="Student is already signed up")
-    
+        raise HTTPException(status_code=400, detail="Student is already signed up")
+
     # Add student
     activity["participants"].append(email)
     return {"message": f"Signed up {email} for {activity_name}"}
 
 
+class UnregisterRequest(BaseModel):
+    email: str
+
 @app.post("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str | None = None, payload: dict | None = Body(None)):
+def unregister_from_activity(
+    activity_name: str,
+    email: str | None = Query(None, description="Student email as query parameter"),
+    payload: dict | None = Body(None),
+):
     """Unregister a student from an activity by email (POST body or query param).
 
-    This endpoint accepts the email either as a query parameter (e.g. ?email=...) or
-    in a JSON body like {"email": "user@example.com"} so the front-end can POST JSON.
+    Accepts the email either as a query parameter (e.g. ?email=...) or
+    in a JSON body like {"email": "user@example.com"}.
     """
+    # Resolve email from either query param or JSON body
+    if not email and payload is not None:
+        try:
+            parsed = UnregisterRequest.parse_obj(payload)
+            email = parsed.email
+        except ValidationError:
+            raise HTTPException(status_code=400, detail="Missing email to unregister")
+
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")
 
-    activity = activities[activity_name]
-
-    # If email wasn't provided via query param, try the JSON body payload
-    if not email and payload and isinstance(payload, dict):
-        email = payload.get("email")
-
     if not email:
         raise HTTPException(status_code=400, detail="Missing email to unregister")
+
+    activity = activities[activity_name]
 
     if email not in activity["participants"]:
         raise HTTPException(status_code=404, detail="Participant not found in activity")
