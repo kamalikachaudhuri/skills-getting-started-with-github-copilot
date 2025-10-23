@@ -69,6 +69,8 @@ document.addEventListener("DOMContentLoaded", () => {
           details.participants.forEach((p) => {
             const li = document.createElement("li");
             li.className = "participant-item";
+            // Store participant identifier on the li for easy access
+            li.dataset.participant = p;
 
             const avatar = document.createElement("span");
             avatar.className = "avatar";
@@ -78,8 +80,42 @@ document.addEventListener("DOMContentLoaded", () => {
             nameSpan.className = "participant-name";
             nameSpan.textContent = p;
 
+            // Delete button (trash icon)
+            const deleteBtn = document.createElement("button");
+            deleteBtn.className = "participant-delete";
+            deleteBtn.type = "button";
+            deleteBtn.setAttribute("aria-label", `Unregister ${p}`);
+            deleteBtn.innerHTML = "\u{1F5D1}"; // trash can emoji as icon fallback
+
+            // Click handler to unregister participant
+            deleteBtn.addEventListener("click", async (e) => {
+              e.stopPropagation();
+              // Simple confirmation
+              if (!confirm(`Unregister ${p} from ${name}?`)) return;
+
+              try {
+                const resp = await fetch(`/activities/${encodeURIComponent(name)}/unregister`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ email: p }),
+                });
+
+                if (resp.ok) {
+                  // remove from DOM
+                  li.remove();
+                } else {
+                  const body = await resp.json().catch(() => ({}));
+                  alert(body.detail || "Failed to unregister participant");
+                }
+              } catch (err) {
+                console.error("Error unregistering:", err);
+                alert("Failed to unregister participant. See console for details.");
+              }
+            });
+
             li.appendChild(avatar);
             li.appendChild(nameSpan);
+            li.appendChild(deleteBtn);
             ul.appendChild(li);
           });
 

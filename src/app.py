@@ -5,7 +5,7 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
@@ -104,3 +104,29 @@ def signup_for_activity(activity_name: str, email: str):
     # Add student
     activity["participants"].append(email)
     return {"message": f"Signed up {email} for {activity_name}"}
+
+
+@app.post("/activities/{activity_name}/unregister")
+def unregister_from_activity(activity_name: str, email: str | None = None, payload: dict | None = Body(None)):
+    """Unregister a student from an activity by email (POST body or query param).
+
+    This endpoint accepts the email either as a query parameter (e.g. ?email=...) or
+    in a JSON body like {"email": "user@example.com"} so the front-end can POST JSON.
+    """
+    if activity_name not in activities:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    activity = activities[activity_name]
+
+    # If email wasn't provided via query param, try the JSON body payload
+    if not email and payload and isinstance(payload, dict):
+        email = payload.get("email")
+
+    if not email:
+        raise HTTPException(status_code=400, detail="Missing email to unregister")
+
+    if email not in activity["participants"]:
+        raise HTTPException(status_code=404, detail="Participant not found in activity")
+
+    activity["participants"].remove(email)
+    return {"message": f"Unregistered {email} from {activity_name}"}
